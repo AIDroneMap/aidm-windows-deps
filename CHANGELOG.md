@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Converted archive decoding and member extraction errors into named release failures while preserving the remaining verdicts. Evidence: command fixtures in `tests/test_check_release.py` cover corrupt deflate data, truncated members, wrong CRCs, bad central directories and injected read errors.
 - Rejected encrypted ZIP entries before extraction and kept the release verdicts complete. Evidence: `test_encrypted_zip_reports_failure_and_continues` in `tests/test_check_release.py` checks the command output and exit status.
 - Reported unsupported ZIP compression as a failed release check and continued with the remaining verdicts. Evidence: `test_unsupported_zip_compression_reports_failure_and_continues` in `tests/test_check_release.py` checks the command output and exit status.
 - Added the release checker and its Linux fixture tests for asset hashes, export ports and versions, licences, recorded Windows results and imported runtime DLLs. Evidence: `tests/test_check_release.py`, run by the `Unit tests` check in `tests.yml`.

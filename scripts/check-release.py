@@ -23,6 +23,7 @@ import struct
 import subprocess
 import tempfile
 import zipfile
+import zlib
 
 
 TRIPLET = "x64-windows-avx2"
@@ -71,12 +72,16 @@ def extract(archive, destination):
             seen.add(key)
             entries.append((entry, destination.joinpath(*parts)))
         for entry, target in entries:
-            if entry.filename.endswith(("/", "\\")):
-                target.mkdir(parents=True, exist_ok=True)
-            else:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with source.open(entry) as src, target.open("wb") as dst:
-                    shutil.copyfileobj(src, dst)
+            try:
+                if entry.filename.endswith(("/", "\\")):
+                    target.mkdir(parents=True, exist_ok=True)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with source.open(entry) as src, target.open("wb") as dst:
+                        shutil.copyfileobj(src, dst)
+            except Exception as error:
+                # Decoders and file operations can fail after the headers passed.
+                raise ValueError(f"Cannot extract {entry.filename}: {error}") from error
 
 
 def status_ports(text):
@@ -285,6 +290,7 @@ class ReleaseCheck:
 
     def export(self, work):
         candidates = []
+        archive_errors = []
         for archive in self.files():
             if archive.suffix.lower() != ".zip":
                 continue
@@ -293,8 +299,10 @@ class ReleaseCheck:
                     if any(name.replace("\\", "/").endswith("/vcpkg/status")
                            for name in source.namelist()):
                         candidates.append(archive)
-            except zipfile.BadZipFile:
-                continue
+            except zipfile.BadZipFile as error:
+                archive_errors.append(f"{archive.name}: {error}")
+        if not candidates and archive_errors:
+            raise ValueError("No readable export zip: " + "; ".join(archive_errors))
         self.export_zip = one(candidates, "export zip containing vcpkg/status")
         folder = work / "export"
         extract(self.export_zip, folder)
@@ -392,8 +400,9 @@ class ReleaseCheck:
             for name, check in checks:
                 try:
                     check()
-                except (OSError, ValueError, KeyError, TypeError, NotImplementedError,
-                        zipfile.BadZipFile, struct.error, subprocess.SubprocessError) as error:
+                except (OSError, ValueError, KeyError, TypeError, RuntimeError, EOFError,
+                        zipfile.BadZipFile, zipfile.LargeZipFile, zlib.error, struct.error,
+                        subprocess.SubprocessError) as error:
                     results.append((name, False, str(error)))
                 else:
                     results.append((name, True, "ok"))

@@ -205,7 +205,8 @@ class ReleaseTests(unittest.TestCase):
                                 text=True, capture_output=True, check=False)
         self.assertEqual(result.returncode, 1)
         self.assertIn("PASS checksums: ok", result.stdout)
-        self.assertIn("FAIL export: That compression method is not supported", result.stdout)
+        self.assertIn("FAIL export: Cannot extract " + PREFIX + "vcpkg/status: "
+                      "That compression method is not supported", result.stdout)
         self.assertIn("PASS metadata: ok", result.stdout)
         self.assertIn("FAIL runtime:", result.stdout)
         self.assertEqual(len(result.stdout.splitlines()), 8)
@@ -237,6 +238,97 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn("FAIL runtime:", result.stdout)
         self.assertEqual(len(result.stdout.splitlines()), 8)
         self.assertEqual(result.stderr, "")
+
+    def assert_archive_command_failure(self, error_text, injection=None):
+        self.sums()
+        command = [sys.executable]
+        if injection is not None:
+            command += ["-c", injection]
+        command += [str(SCRIPT), str(self.assets), "--manifest", str(self.manifest)]
+        result = subprocess.run(command, text=True, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("PASS checksums: ok", result.stdout)
+        self.assertIn("FAIL export:", result.stdout)
+        export_verdict = next(line for line in result.stdout.splitlines() if line.startswith("FAIL export:"))
+        self.assertIn(error_text, export_verdict)
+        self.assertIn("PASS metadata: ok", result.stdout)
+        self.assertIn("FAIL runtime:", result.stdout)
+        self.assertEqual(len(result.stdout.splitlines()), 8)
+        self.assertEqual(result.stderr, "")
+
+    def test_corrupt_deflate_reports_failure_and_continues(self):
+        archive_path = self.assets / EXPORT
+        with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for name, contents in self.export_files.items():
+                archive.writestr(name, contents)
+        with zipfile.ZipFile(archive_path) as archive:
+            entry = archive.infolist()[0]
+            local_header = entry.header_offset
+        data = bytearray(archive_path.read_bytes())
+        name_size, extra_size = struct.unpack_from("<HH", data, local_header + 26)
+        data[local_header + 30 + name_size + extra_size] = 0x07
+        archive_path.write_bytes(data)
+        self.assert_archive_command_failure("invalid block type")
+
+    def test_wrong_crc_reports_failure_and_continues(self):
+        archive_path = self.assets / EXPORT
+        with zipfile.ZipFile(archive_path) as archive:
+            local_header = archive.infolist()[0].header_offset
+            central_header = archive.start_dir
+        data = bytearray(archive_path.read_bytes())
+        crc = struct.unpack_from("<I", data, local_header + 14)[0] ^ 1
+        struct.pack_into("<I", data, local_header + 14, crc)
+        struct.pack_into("<I", data, central_header + 16, crc)
+        archive_path.write_bytes(data)
+        self.assert_archive_command_failure("Bad CRC-32")
+
+    def test_bad_central_directory_reports_failure_and_continues(self):
+        archive_path = self.assets / EXPORT
+        with zipfile.ZipFile(archive_path) as archive:
+            central_header = archive.start_dir
+        data = bytearray(archive_path.read_bytes())
+        data[central_header:central_header + 4] = b"BAD!"
+        archive_path.write_bytes(data)
+        self.assert_archive_command_failure("Bad magic number for central directory")
+
+    def test_truncated_member_reports_failure_and_continues(self):
+        archive_path = self.assets / EXPORT
+        with zipfile.ZipFile(archive_path) as archive:
+            entry = archive.infolist()[-1]
+            central_header = archive.start_dir
+        data = bytearray(archive_path.read_bytes())
+        name_size, extra_size = struct.unpack_from("<HH", data, entry.header_offset + 26)
+        member_end = entry.header_offset + 30 + name_size + extra_size + entry.compress_size
+        self.assertEqual(member_end, central_header)
+        # Remove the final payload byte, retaining a readable central directory.
+        del data[member_end - 1:member_end]
+        end_record = data.rfind(b"PK\x05\x06")
+        self.assertNotEqual(end_record, -1)
+        struct.pack_into("<I", data, end_record + 16, central_header - 1)
+        archive_path.write_bytes(data)
+        self.assert_archive_command_failure("Overlapped entries")
+
+    def member_read_injection(self, error_class):
+        return (
+            "import runpy, sys, zipfile, zlib\n"
+            f"error = {error_class}('injected member read failure')\n"
+            "def fail_read(self, *args, **kwargs):\n"
+            "    raise error\n"
+            "zipfile.ZipExtFile.read = fail_read\n"
+            "sys.argv = sys.argv[1:]\n"
+            "runpy.run_path(sys.argv[0], run_name='__main__')\n"
+        )
+
+    def test_member_read_error_families_report_failure_and_continue(self):
+        for error_class in ("zipfile.BadZipFile", "zlib.error", "RuntimeError",
+                            "NotImplementedError", "EOFError", "OSError", "zipfile.LargeZipFile"):
+            with self.subTest(error_class=error_class):
+                self.assert_archive_command_failure("injected member read failure",
+                                                    self.member_read_injection(error_class))
+
+    def test_generic_member_read_exception_reports_failure_and_continues(self):
+        self.assert_archive_command_failure("injected member read failure",
+                                            self.member_read_injection("Exception"))
 
     def test_zip_paths_and_symlink_rejected(self):
         for name in ("../escape", "/escape", "C:\\escape", "..\\escape", "NUL.txt", "file. "):
