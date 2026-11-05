@@ -391,8 +391,8 @@ class ReleaseCheck:
             for name, check in checks:
                 try:
                     check()
-                except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile,
-                        struct.error, subprocess.SubprocessError) as error:
+                except (OSError, ValueError, KeyError, TypeError, NotImplementedError,
+                        zipfile.BadZipFile, struct.error, subprocess.SubprocessError) as error:
                     results.append((name, False, str(error)))
                 else:
                     results.append((name, True, "ok"))

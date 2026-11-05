@@ -6,6 +6,8 @@ import io
 import json
 from pathlib import Path
 import struct
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -184,6 +186,30 @@ class ReleaseTests(unittest.TestCase):
     def test_invalid_export(self):
         (self.assets / EXPORT).write_bytes(b"not a zip")
         self.assert_failure("export")
+
+    def test_unsupported_zip_compression_reports_failure_and_continues(self):
+        archive_path = self.assets / EXPORT
+        with zipfile.ZipFile(archive_path) as archive:
+            local_header = archive.infolist()[0].header_offset
+            central_header = archive.start_dir
+        data = bytearray(archive_path.read_bytes())
+        self.assertEqual(data[local_header:local_header + 4], b"PK\x03\x04")
+        self.assertEqual(data[central_header:central_header + 4], b"PK\x01\x02")
+        struct.pack_into("<H", data, local_header + 8, 99)
+        struct.pack_into("<H", data, central_header + 10, 99)
+        archive_path.write_bytes(data)
+        self.sums()
+
+        result = subprocess.run([sys.executable, str(SCRIPT), str(self.assets),
+                                 "--manifest", str(self.manifest)],
+                                text=True, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("PASS checksums: ok", result.stdout)
+        self.assertIn("FAIL export: That compression method is not supported", result.stdout)
+        self.assertIn("PASS metadata: ok", result.stdout)
+        self.assertIn("FAIL runtime:", result.stdout)
+        self.assertEqual(len(result.stdout.splitlines()), 8)
+        self.assertEqual(result.stderr, "")
 
     def test_zip_paths_and_symlink_rejected(self):
         for name in ("../escape", "/escape", "C:\\escape", "..\\escape", "NUL.txt", "file. "):
