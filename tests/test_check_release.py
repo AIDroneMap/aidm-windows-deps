@@ -211,6 +211,33 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(len(result.stdout.splitlines()), 8)
         self.assertEqual(result.stderr, "")
 
+    def test_encrypted_zip_reports_failure_and_continues(self):
+        archive_path = self.assets / EXPORT
+        with zipfile.ZipFile(archive_path) as archive:
+            entry = archive.infolist()[0]
+            self.assertEqual(entry.filename, PREFIX + "vcpkg/status")
+            local_header = entry.header_offset
+            central_header = archive.start_dir
+        data = bytearray(archive_path.read_bytes())
+        self.assertEqual(data[local_header:local_header + 4], b"PK\x03\x04")
+        self.assertEqual(data[central_header:central_header + 4], b"PK\x01\x02")
+        for flag_offset in (local_header + 6, central_header + 8):
+            flags = struct.unpack_from("<H", data, flag_offset)[0]
+            struct.pack_into("<H", data, flag_offset, flags | 1)
+        archive_path.write_bytes(data)
+        self.sums()
+
+        result = subprocess.run([sys.executable, str(SCRIPT), str(self.assets),
+                                 "--manifest", str(self.manifest)],
+                                text=True, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("PASS checksums: ok", result.stdout)
+        self.assertIn("FAIL export: Encrypted zip entry: " + PREFIX + "vcpkg/status", result.stdout)
+        self.assertIn("PASS metadata: ok", result.stdout)
+        self.assertIn("FAIL runtime:", result.stdout)
+        self.assertEqual(len(result.stdout.splitlines()), 8)
+        self.assertEqual(result.stderr, "")
+
     def test_zip_paths_and_symlink_rejected(self):
         for name in ("../escape", "/escape", "C:\\escape", "..\\escape", "NUL.txt", "file. "):
             with self.subTest(name=name):

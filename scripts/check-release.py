@@ -56,6 +56,7 @@ def extract(archive, destination):
         entries = []
         seen = set()
         for entry in source.infolist():
+            require(not entry.flag_bits & 1, f"Encrypted zip entry: {entry.filename}")
             name = entry.filename.replace("\\", "/")
             parts = PurePosixPath(name).parts
             require(parts and not name.startswith("/") and ":" not in name
