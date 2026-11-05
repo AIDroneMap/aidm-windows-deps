@@ -361,9 +361,11 @@ class ReleaseCheck:
         require(hasattr(self, "installed"), "Export check must pass before running GDAL")
         wheel = one((p for p in self.files() if re.fullmatch(r"gdal-.*\.whl", p.name, re.I)), "GDAL wheel")
         with zipfile.ZipFile(wheel) as source:
-            require(not any(name.lower().endswith((".dll", "/proj.db"))
-                            or "/share/gdal/" in name.lower() for name in source.namelist()),
-                    "GDAL wheel must contain bindings only, without DLLs or data")
+            for name in source.namelist():
+                parts = name.replace("\\", "/").lower().split("/")
+                require(not (parts[-1].endswith(".dll") or parts[-1] == "proj.db"
+                             or any(part in ("data", "share") for part in parts[:-1])),
+                        f"GDAL wheel must contain bindings only, without DLLs or data: {name}")
         result = self.probe.gdal(self.python_zip(), wheel, self.installed, self.runtime_zip(), work)
         require(result["version"] == "3.8.4", f"GDAL version mismatch: {result['version']}")
         require(result["geotiff"] is True, "GDAL has no GeoTIFF driver")

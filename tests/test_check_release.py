@@ -433,9 +433,33 @@ class ReleaseTests(unittest.TestCase):
                 self.assertEqual(self.failed(), {"gdal"})
                 self.probe.result[key] = original
 
+    def assert_wheel_entry_rejected(self, name):
+        self.write_zip(WHEEL, {name: "duplicate"})
+        self.sums()
+        failures = {check_name: message for check_name, passed, message in self.results() if not passed}
+        self.assertEqual(set(failures), {"gdal"})
+        self.assertIn(name, failures["gdal"])
+        self.assertNotIn("gdal", self.probe.calls)
+
     def test_gdal_wheel_must_not_bundle_dlls(self):
-        self.write_zip(WHEEL, {"osgeo/gdal.dll": "duplicate"})
-        self.assert_failure("gdal")
+        for name in ("gdal.dll", "osgeo/gdal.dll", "osgeo\\GDAL.DLL"):
+            with self.subTest(name=name):
+                self.assert_wheel_entry_rejected(name)
+
+    def test_gdal_wheel_must_not_bundle_data_folders(self):
+        for name in ("data/gcs.csv", "osgeo/data/gdal/gcs.csv", "osgeo/data/",
+                     "osgeo\\DATA\\gdal\\gcs.csv"):
+            with self.subTest(name=name):
+                self.assert_wheel_entry_rejected(name)
+
+    def test_gdal_wheel_must_not_bundle_share_folders(self):
+        for name in ("share/metadata.json", "osgeo/resources/share/metadata.json",
+                     "osgeo/share/", "osgeo\\SHARE\\metadata.json"):
+            with self.subTest(name=name):
+                self.assert_wheel_entry_rejected(name)
+
+    def test_gdal_wheel_must_not_bundle_proj_database(self):
+        self.assert_wheel_entry_rejected("osgeo/proj.db")
 
     def test_missing_each_required_archive(self):
         for name, failure in ((PYTHON, "gdal"), (EXIF, "exiftool"), (WHEEL, "gdal"), (RUNTIME, "runtime")):
