@@ -2,7 +2,7 @@
 
 This repository owns the prebuilt Windows dependencies consumed by the [AIDM engine](https://github.com/AIDroneMap/aidm). The engine pins a release tag and each asset's SHA-256 before using it in its Windows build.
 
-The first release is being implemented from [spec #1](https://github.com/AIDroneMap/aidm-windows-deps/issues/1). This branch establishes the repository rules and documentation. It does not yet build or publish dependencies.
+The first release is being implemented from [spec #1](https://github.com/AIDroneMap/aidm-windows-deps/issues/1). The repository rules and documentation came first; the build and the release follow in the tickets of that spec.
 
 ## Planned release assets
 

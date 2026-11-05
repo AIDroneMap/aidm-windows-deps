@@ -32,7 +32,7 @@ One or more AI agents provided valued contribution.
 
 Changes between releases go under `## Unreleased` at the top of `CHANGELOG.md`. Each entry says what changed and points to its evidence, such as a test, a workflow check or a review of the text.
 
-A pull request touching `.github/` lands alone and changes nothing else. A ticket adding a step to `release.yml` also carries the files that step reads, such as the manifest, triplet or script, and its changelog entry. It carries no unrelated changes.
+A pull request that changes a workflow carries only that workflow, the files the workflow runs or reads (a manifest, a triplet, a script and its tests) and its changelog entry. It carries no unrelated change.
 
 ## Writing and privacy
 
