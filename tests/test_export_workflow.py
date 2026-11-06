@@ -15,7 +15,8 @@ class ExportWorkflowTests(unittest.TestCase):
     def setUpClass(cls):
         workflow = (Path(__file__).resolve().parents[1]
                     / ".github/workflows/release.yml").read_text(encoding="utf-8")
-        script = workflow.split("        shell: python\n        run: |\n", 1)[1]
+        step = workflow.split("      - name: Check export versions and release payload\n", 1)[1]
+        script = step.split("        shell: python\n        run: |\n", 1)[1]
         cls.check = textwrap.dedent(script.split("\n      - name:", 1)[0])
 
     def setUp(self):
