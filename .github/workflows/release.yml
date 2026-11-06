@@ -1,0 +1,18 @@
+name: Windows dependencies
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a release
+        type: boolean
+        default: false
+
+jobs:
+  register:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Register the release workflow
+        run: |
+          echo 'The export workflow lands with #5.'
+          exit 0
