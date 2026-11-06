@@ -2,17 +2,142 @@ name: Windows dependencies
 
 on:
   workflow_dispatch:
-    inputs:
-      publish:
-        description: Publish a release
-        type: boolean
-        default: false
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: pwsh
 
 jobs:
-  register:
-    runs-on: ubuntu-24.04
+  export:
+    name: Export Windows dependencies
+    runs-on: windows-2025
+    timeout-minutes: 360
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+      VCPKG_BINARY_SOURCES: clear
+      VCPKG_DEFAULT_TRIPLET: x64-windows-avx2
+      VCPKG_DEFAULT_HOST_TRIPLET: x64-windows-avx2
+      VCPKG_DISABLE_METRICS: '1'
     steps:
-      - name: Register the release workflow
+      - name: Check out sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Bootstrap pinned vcpkg
         run: |
-          echo 'The export workflow lands with #5.'
-          exit 0
+          $manifest = Get-Content vcpkg.json -Raw | ConvertFrom-Json
+          $baseline = $manifest.'builtin-baseline'
+          if ($baseline -cnotmatch '^[0-9a-f]{40}$') {
+            throw 'The vcpkg baseline must be a full commit hash.'
+          }
+          git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+          if ($LASTEXITCODE -ne 0) { throw 'Cloning vcpkg failed.' }
+          git -C $env:VCPKG_ROOT checkout --detach $baseline
+          if ($LASTEXITCODE -ne 0) { throw 'Checking out the vcpkg baseline failed.' }
+          $actual = git -C $env:VCPKG_ROOT rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $actual -cne $baseline) {
+            throw 'The vcpkg checkout does not match the manifest baseline.'
+          }
+          & "$env:VCPKG_ROOT/bootstrap-vcpkg.bat" -disableMetrics
+          if ($LASTEXITCODE -ne 0) { throw 'Bootstrapping vcpkg failed.' }
+
+      - name: Install release ports
+        run: |
+          & "$env:VCPKG_ROOT/vcpkg.exe" install `
+            --triplet=x64-windows-avx2 `
+            --host-triplet=x64-windows-avx2 `
+            "--overlay-triplets=$env:GITHUB_WORKSPACE/triplets" `
+            "--overlay-ports=$env:GITHUB_WORKSPACE/ports" `
+            "--x-manifest-root=$env:GITHUB_WORKSPACE" `
+            "--x-install-root=$env:GITHUB_WORKSPACE/vcpkg_installed" `
+            --no-binarycaching --clean-after-build
+          if ($LASTEXITCODE -ne 0) { throw 'Installing the manifest failed.' }
+
+      - name: Export installed ports
+        run: |
+          New-Item -ItemType Directory -Path assets -Force | Out-Null
+          & "$env:VCPKG_ROOT/vcpkg.exe" export --raw `
+            --output=aidm-windows-deps `
+            "--output-dir=$env:GITHUB_WORKSPACE/assets" `
+            --triplet=x64-windows-avx2 `
+            "--overlay-triplets=$env:GITHUB_WORKSPACE/triplets" `
+            "--overlay-ports=$env:GITHUB_WORKSPACE/ports" `
+            "--x-manifest-root=$env:GITHUB_WORKSPACE" `
+            "--x-install-root=$env:GITHUB_WORKSPACE/vcpkg_installed"
+          if ($LASTEXITCODE -ne 0) { throw 'Exporting the installed ports failed.' }
+
+      - name: Package release export
+        shell: python
+        run: |
+          import shutil
+          from pathlib import Path
+
+          exported = Path("assets/aidm-windows-deps")
+          shutil.copyfile(
+              "vcpkg_installed/vcpkg/status",
+              exported / "installed/vcpkg/status",
+          )
+          debug = exported / "installed/x64-windows-avx2/debug"
+          if debug.exists():
+              for path in sorted([debug, *debug.rglob("*")]):
+                  print(f"Removing debug export path: {path.relative_to(exported).as_posix()}")
+              shutil.rmtree(debug)
+          shutil.make_archive(
+              "assets/aidm-windows-deps", "zip",
+              root_dir="assets", base_dir="aidm-windows-deps",
+          )
+
+      - name: Check export versions and release payload
+        shell: python
+        run: |
+          import json
+          import re
+          import zipfile
+          from pathlib import Path
+
+          triplet = "x64-windows-avx2"
+          manifest = json.loads(Path("vcpkg.json").read_text())
+          dependencies = {
+              item if isinstance(item, str) else item["name"]
+              for item in manifest["dependencies"]
+          }
+          overrides = {item["name"]: item for item in manifest["overrides"]}
+          if not dependencies <= overrides.keys():
+              raise SystemExit("Each manifest dependency must have one override.")
+          archive = Path("assets/aidm-windows-deps.zip")
+          with zipfile.ZipFile(archive) as exported:
+              names = exported.namelist()
+              status_paths = [name for name in names if name.endswith("/installed/vcpkg/status")]
+              if len(status_paths) != 1:
+                  raise SystemExit("The export must contain one installed status file.")
+              debug_paths = [name for name in names if re.search(r"/installed/[^/]+/debug/", name)]
+              if debug_paths:
+                  raise SystemExit(f"Debug payload found: {debug_paths[0]}")
+              status = exported.read(status_paths[0]).decode("utf-8")
+          ports = {}
+          for paragraph in re.split(r"\r?\n\s*\r?\n", status.strip()):
+              fields = dict(line.split(": ", 1) for line in paragraph.splitlines() if ": " in line)
+              if fields.get("Architecture") == triplet and "Feature" not in fields:
+                  ports[fields["Package"]] = fields
+          for name, override in overrides.items():
+              actual = ports.get(name, {})
+              expected = (override["version"], int(override.get("port-version", 0)))
+              found = (actual.get("Version"), int(actual.get("Port-Version", 0)))
+              if found != expected or actual.get("Status") != "install ok installed":
+                  raise SystemExit(f"Wrong or missing export port {name}: {found}, expected {expected}")
+          print(f"Checked {len(overrides)} pinned ports; the export has no debug payload.")
+
+      - name: Upload deps export
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: aidm-windows-deps
+          path: assets/aidm-windows-deps.zip
+          if-no-files-found: error
+          compression-level: 0
