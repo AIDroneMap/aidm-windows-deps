@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Registered `.github/workflows/release.yml` on main as a placeholder with a `workflow_dispatch` trigger and a `publish` input so that a branch dispatch of the export workflow in #5 can run. Evidence: the workflow YAML and the [Unit tests check on PR #14](https://github.com/AIDroneMap/aidm-windows-deps/pull/14/checks). Coverage gap: registration itself is checked by dispatching the placeholder on main after merge, because GitHub refuses a branch dispatch of a workflow absent from the default branch.
 - Rejected GDAL wheels containing data or share folders at any depth and named the offending entry. Evidence: the wheel fixture tests in `tests/test_check_release.py` cover data folders, share folders, DLLs and the PROJ database.
 - Converted archive decoding and member extraction errors into named release failures while preserving the remaining verdicts. Evidence: command fixtures in `tests/test_check_release.py` cover corrupt deflate data, truncated members, wrong CRCs, bad central directories and injected read errors.
 - Rejected encrypted ZIP entries before extraction and kept the release verdicts complete. Evidence: `test_encrypted_zip_reports_failure_and_continues` in `tests/test_check_release.py` checks the command output and exit status.
