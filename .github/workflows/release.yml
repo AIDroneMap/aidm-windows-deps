@@ -54,6 +54,7 @@ jobs:
             --triplet=x64-windows-avx2 `
             --host-triplet=x64-windows-avx2 `
             "--overlay-triplets=$env:GITHUB_WORKSPACE/triplets" `
+            "--overlay-ports=$env:GITHUB_WORKSPACE/ports" `
             "--x-manifest-root=$env:GITHUB_WORKSPACE" `
             "--x-install-root=$env:GITHUB_WORKSPACE/vcpkg_installed" `
             --no-binarycaching --clean-after-build
@@ -67,6 +68,7 @@ jobs:
             "--output-dir=$env:GITHUB_WORKSPACE/assets" `
             --triplet=x64-windows-avx2 `
             "--overlay-triplets=$env:GITHUB_WORKSPACE/triplets" `
+            "--overlay-ports=$env:GITHUB_WORKSPACE/ports" `
             "--x-manifest-root=$env:GITHUB_WORKSPACE" `
             "--x-install-root=$env:GITHUB_WORKSPACE/vcpkg_installed"
           if ($LASTEXITCODE -ne 0) { throw 'Exporting the installed ports failed.' }
