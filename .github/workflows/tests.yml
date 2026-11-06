@@ -26,3 +26,5 @@ jobs:
           python-version: '3.12'
       - name: Check release fixtures
         run: python -m unittest discover -s tests
+      - name: Check release asset fixtures
+        run: python -m unittest discover -s .github/release/tests

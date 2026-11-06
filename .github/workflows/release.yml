@@ -30,6 +30,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Download and verify publisher files
+        run: python .github/release/assets.py download
+
       - name: Bootstrap pinned vcpkg
         run: |
           $manifest = Get-Content vcpkg.json -Raw | ConvertFrom-Json
@@ -134,10 +137,25 @@ jobs:
                   raise SystemExit(f"Wrong or missing export port {name}: {found}, expected {expected}")
           print(f"Checked {len(overrides)} pinned ports; the export has no debug payload.")
 
-      - name: Upload deps export
+      - name: Record build versions
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $version = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationVersion
+          if ($LASTEXITCODE -ne 0 -or -not $version) {
+            throw 'Cannot determine the Visual Studio version.'
+          }
+          "BUILD_VISUAL_STUDIO_VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Write release lists and checksums
+        run: |
+          Remove-Item -Recurse -Force assets/aidm-windows-deps
+          python .github/release/assets.py metadata
+          if ($LASTEXITCODE -ne 0) { throw 'Writing release metadata failed.' }
+
+      - name: Upload dependency assets
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: aidm-windows-deps
-          path: assets/aidm-windows-deps.zip
+          path: assets/*
           if-no-files-found: error
           compression-level: 0
