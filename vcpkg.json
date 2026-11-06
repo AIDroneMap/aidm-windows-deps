@@ -121,6 +121,11 @@
       "version": "2025-07-04"
     },
     {
+      "name": "netcdf-c",
+      "version": "4.8.1",
+      "port-version": 4
+    },
+    {
       "name": "proj",
       "version": "9.4.1",
       "port-version": 1

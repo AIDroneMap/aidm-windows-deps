@@ -88,7 +88,7 @@ jobs:
               for item in manifest["dependencies"]
           }
           overrides = {item["name"]: item for item in manifest["overrides"]}
-          if dependencies != overrides.keys():
+          if not dependencies <= overrides.keys():
               raise SystemExit("Each manifest dependency must have one override.")
           archive = Path("assets/aidm-windows-deps.zip")
           with zipfile.ZipFile(archive) as exported:
