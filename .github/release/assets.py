@@ -95,7 +95,21 @@ def metadata(assets, manifest, licences, build_info, config=CONFIG):
         for name, version in sorted(ports.items()):
             copyright_path = f"{root}{TRIPLET}/share/{name}/copyright"
             sections.append(f"\n## {name}\n\nVersion: {version}\n")
-            sections.append(notice(copyright_path, decode(exported.read(copyright_path))))
+            if copyright_path in exported.namelist():
+                sections.append(notice(copyright_path, decode(exported.read(copyright_path))))
+            else:
+                wrapper = licences.get("wrapper_ports", {}).get(name)
+                if wrapper is None:
+                    raise ValueError(f"Missing export copyright: {name}")
+                if (wrapper["version"] != version
+                        or licences["wrapper_baseline"] != manifest["builtin-baseline"]):
+                    raise ValueError(f"Unrecognised copyright-free port: {name}")
+                if not set(wrapper["implementations"]) <= ports.keys():
+                    raise ValueError(f"Missing wrapper implementation: {name}")
+                sections.append(f"\n{wrapper['note']}\n\nSource: {wrapper['source']}\n")
+                for text in wrapper["texts"]:
+                    sections.append(notice(text["source"],
+                                           (config / text["file"]).read_text(encoding="utf-8")))
         for runtime in licences["export_runtimes"]:
             binary = f"{root}{TRIPLET}/bin/{runtime['filename']}"
             if binary not in exported.namelist():

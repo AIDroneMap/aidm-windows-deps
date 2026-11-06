@@ -87,5 +87,66 @@
         }
       ]
     }
-  ]
+  ],
+  "wrapper_baseline": "6ecbbbdf31cba47aafa7cf6189b1e73e10ac61f8",
+  "wrapper_ports": {
+    "blas": {
+      "version": "2023-04-14#3",
+      "note": "This metapackage ships no per-port copyright file. Its generated build wrappers use the vcpkg MIT licence below. The BLAS implementation and its licence are listed under openblas.",
+      "source": "https://raw.githubusercontent.com/microsoft/vcpkg/6ecbbbdf31cba47aafa7cf6189b1e73e10ac61f8/ports/blas/portfile.cmake",
+      "implementations": [
+        "openblas"
+      ],
+      "texts": [
+        {
+          "file": "licenses/vcpkg-LICENSE.txt",
+          "source": "https://raw.githubusercontent.com/microsoft/vcpkg/6ecbbbdf31cba47aafa7cf6189b1e73e10ac61f8/LICENSE.txt"
+        }
+      ]
+    },
+    "boost-uninstall": {
+      "version": "1.88.0",
+      "note": "This internal port ships no per-port copyright file. It installs a build-system wrapper and declares MIT in its port manifest. The vcpkg MIT licence is reproduced below.",
+      "source": "https://raw.githubusercontent.com/microsoft/vcpkg/6ecbbbdf31cba47aafa7cf6189b1e73e10ac61f8/ports/boost-uninstall/portfile.cmake",
+      "implementations": [],
+      "texts": [
+        {
+          "file": "licenses/vcpkg-LICENSE.txt",
+          "source": "https://raw.githubusercontent.com/microsoft/vcpkg/6ecbbbdf31cba47aafa7cf6189b1e73e10ac61f8/LICENSE.txt"
+        }
+      ]
+    },
+    "lapack": {
+      "version": "2023-06-10#2",
+      "note": "This metapackage ships no per-port copyright file. It copies build wrappers from lapack-reference. The vcpkg wrapper licence is MIT, and the FindLAPACK.cmake header names the CMake BSD-3-Clause licence. Both texts are reproduced below. The numerical implementation and its licence are listed under lapack-reference.",
+      "source": "https://raw.githubusercontent.com/microsoft/vcpkg/6ecbbbdf31cba47aafa7cf6189b1e73e10ac61f8/ports/lapack/portfile.cmake",
+      "implementations": [
+        "lapack-reference"
+      ],
+      "texts": [
+        {
+          "file": "licenses/vcpkg-LICENSE.txt",
+          "source": "https://raw.githubusercontent.com/microsoft/vcpkg/6ecbbbdf31cba47aafa7cf6189b1e73e10ac61f8/LICENSE.txt"
+        },
+        {
+          "file": "licenses/cmake-Copyright.txt",
+          "source": "https://raw.githubusercontent.com/Kitware/CMake/v3.31.6/Copyright.txt"
+        }
+      ]
+    },
+    "yasm-tool": {
+      "version": "2021-12-14",
+      "note": "This legacy metapackage ships no code or per-port copyright file. Its empty port definition selects yasm with the tools feature. The implementation and its licence are listed under yasm. The port metadata is covered by the vcpkg MIT licence below.",
+      "source": "https://raw.githubusercontent.com/microsoft/vcpkg/6ecbbbdf31cba47aafa7cf6189b1e73e10ac61f8/ports/yasm-tool/portfile.cmake",
+      "implementations": [
+        "yasm"
+      ],
+      "texts": [
+        {
+          "file": "licenses/vcpkg-LICENSE.txt",
+          "source": "https://raw.githubusercontent.com/microsoft/vcpkg/6ecbbbdf31cba47aafa7cf6189b1e73e10ac61f8/LICENSE.txt"
+        }
+      ]
+    }
+  }
 }

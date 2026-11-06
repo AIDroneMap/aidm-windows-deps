@@ -124,7 +124,41 @@ class MetadataTests(unittest.TestCase):
     def test_missing_transitive_port_copyright_fails(self):
         del self.export_files["deps/installed/x64-windows-avx2/share/transitive/copyright"]
         self.export()
-        with self.assertRaisesRegex(KeyError, "transitive/copyright"):
+        with self.assertRaisesRegex(ValueError, "Missing export copyright: transitive"):
+            self.generate()
+
+    def wrapper(self):
+        self.export_files["deps/installed/vcpkg/status"] += (
+            "\nPackage: blas\nVersion: 2023-04-14\nPort-Version: 3\n"
+            "Architecture: x64-windows-avx2\nStatus: install ok installed\n"
+        )
+        self.export()
+        self.licences["wrapper_baseline"] = self.manifest["builtin-baseline"]
+        self.licences["wrapper_ports"] = {"blas": {
+            "version": "2023-04-14#3", "note": "Wrapper only. Implementation: gdal.",
+            "source": "Pinned port definition", "implementations": ["gdal"],
+            "texts": [{"file": "COPYING.LIB", "source": "Wrapper licence"}],
+        }}
+
+    def test_known_wrapper_without_copyright_gets_its_own_entry(self):
+        self.wrapper()
+        self.generate()
+        text = (self.folder / "LICENSES.md").read_text()
+        self.assertIn("\n## blas\n", text)
+        self.assertIn("Wrapper only. Implementation: gdal.", text)
+        self.assertIn("Source: Pinned port definition", text)
+        self.assertIn("Source: Wrapper licence", text)
+        self.assertIn("blas:x64-windows-avx2 2023-04-14#3\n",
+                      (self.folder / "vcpkg-list.txt").read_text())
+
+    def test_wrapper_exception_does_not_cover_a_different_version_or_baseline(self):
+        self.wrapper()
+        self.licences["wrapper_ports"]["blas"]["version"] = "2023-04-14#2"
+        with self.assertRaisesRegex(ValueError, "Unrecognised copyright-free port: blas"):
+            self.generate()
+        self.licences["wrapper_ports"]["blas"]["version"] = "2023-04-14#3"
+        self.licences["wrapper_baseline"] = "b" * 40
+        with self.assertRaisesRegex(ValueError, "Unrecognised copyright-free port: blas"):
             self.generate()
 
     def test_missing_runtime_fails(self):
