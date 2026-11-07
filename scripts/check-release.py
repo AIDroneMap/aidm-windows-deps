@@ -248,11 +248,17 @@ class ReleaseCheck:
         status = one(folder.rglob("vcpkg/status"), "vcpkg status file")
         self.installed = status.parent.parent
         self.ports = status_ports(status.read_text(encoding="utf-8"))
-        for path in self.installed.rglob("*"):
-            relative = path.relative_to(self.installed)
-            require(not ("debug" in (part.lower() for part in relative.parts)
-                         or path.suffix.lower() == ".pdb"),
-                    f"Export contains debug payload: {relative.as_posix()}")
+        offending = []
+        for path in sorted(folder.rglob("*")):
+            debug = False
+            if path.is_relative_to(self.installed):
+                parts = [part.lower() for part in path.relative_to(self.installed).parts]
+                # Header directories can be named debug, including Boost's headers.
+                debug = len(parts) > 1 and (parts[1] == "debug" or (
+                    parts[1] in ("bin", "lib") and "debug" in parts[2:]))
+            if debug or (path.is_file() and path.suffix.lower() == ".pdb"):
+                offending.append(path.relative_to(folder).as_posix())
+        require(not offending, "Export contains debug payload:\n" + "\n".join(offending))
 
     def ports_match(self):
         require(hasattr(self, "ports"), "Export check must pass before comparing ports")

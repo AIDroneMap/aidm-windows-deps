@@ -420,6 +420,25 @@ class ReleaseTests(unittest.TestCase):
         self.sums()
         self.assertEqual(self.failed(), set())
 
+    def test_header_debug_folder_is_release_payload(self):
+        self.export_files[PREFIX + check.TRIPLET + "/include/boost/preprocessor/debug/x.hpp"] = "fixture"
+        self.write_export()
+        self.sums()
+        self.assertEqual(self.failed(), set())
+
+    def test_debug_verdict_lists_every_offending_path(self):
+        paths = [check.TRIPLET + "/debug/bin/a.dll", check.TRIPLET + "/bin/a.pdb",
+                 check.TRIPLET + "/lib/debug/b.lib", "x64-windows/debug/bin/host.dll"]
+        for path in paths:
+            self.export_files[PREFIX + path] = "fixture"
+        self.export_files["deps/export.pdb"] = "fixture"
+        self.write_export()
+        self.sums()
+        failures = {name: message for name, passed, message in self.results() if not passed}
+        self.assertEqual(set(failures), {"export"})
+        for path in paths + ["deps/export.pdb"]:
+            self.assertIn(path, failures["export"])
+
     def test_second_export_is_rejected(self):
         (self.assets / "second.zip").write_bytes((self.assets / EXPORT).read_bytes())
         self.assert_failure("export")
