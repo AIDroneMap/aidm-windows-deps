@@ -1,6 +1,15 @@
 {
   "assets": [
     {
+      "pattern": "gdal-3.8.4-cp312-cp312-win_amd64.whl",
+      "license": "MIT and the GDAL third-party notices",
+      "source": "https://pypi.org/project/GDAL/3.8.4/",
+      "note": "Built against this release's GDAL export. The wheel carries the export's GDAL copyright and licence text.",
+      "members": [
+        "gdal-3.8.4.dist-info/licenses/LICENSE.txt"
+      ]
+    },
+    {
       "pattern": "python-3.12.10-embed-amd64.zip",
       "license": "PSF-2.0 and the bundled third-party notices",
       "source": "https://www.python.org/downloads/release/python-31210/",
