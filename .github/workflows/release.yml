@@ -92,6 +92,10 @@ jobs:
               for path in sorted([debug, *debug.rglob("*")]):
                   print(f"Removing debug export path: {path.relative_to(exported).as_posix()}")
               shutil.rmtree(debug)
+          for path in sorted((exported / "installed").rglob("*")):
+              if path.is_file() and path.suffix.lower() == ".pdb":
+                  print(f"Removing export symbols: {path.relative_to(exported).as_posix()}")
+                  path.unlink()
           shutil.make_archive(
               "assets/aidm-windows-deps", "zip",
               root_dir="assets", base_dir="aidm-windows-deps",

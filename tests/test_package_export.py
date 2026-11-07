@@ -68,6 +68,25 @@ class PackageExportTests(unittest.TestCase):
         self.assertTrue(self.archive.is_file())
         self.assertNotIn("Removing debug export path", result.stdout)
 
+    def test_release_symbols_removed_and_logged_without_changing_binaries(self):
+        symbols = [self.triplet / "bin/gdal.pdb", self.triplet / "bin/PROJ.PDB",
+                   self.triplet / "lib/port.pdb"]
+        for path in symbols:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"symbols")
+        result = self.package()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        with zipfile.ZipFile(self.archive) as archive:
+            self.assertFalse(any(name.lower().endswith(".pdb") for name in archive.namelist()))
+            for runtime in self.runtimes:
+                self.assertEqual(archive.read(
+                    f"aidm-windows-deps/installed/x64-windows-avx2/bin/{runtime}"),
+                    b"release fixture")
+        for path in symbols:
+            self.assertFalse(path.exists())
+            self.assertIn(f"Removing export symbols: {path.relative_to(self.export).as_posix()}",
+                          result.stdout)
+
     def test_missing_install_status_fails_without_an_archive(self):
         self.status.unlink()
         result = self.package()
