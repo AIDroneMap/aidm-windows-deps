@@ -21,42 +21,9 @@ SPEC.loader.exec_module(check)
 
 PYTHON = "python-3.12.10-embed-amd64.zip"
 EXIF = "exiftool-13.00_64.zip"
-RUNTIME = "vc-runtime.zip"
 EXPORT = "deps-export.zip"
 WHEEL = "GDAL-3.8.4-cp312-cp312-win_amd64.whl"
 PREFIX = "deps/installed/"
-
-
-def pe_binary(imports=("VCRUNTIME140.dll", "KERNEL32.dll"), delay=False):
-    """PE32+ fixture with .rdata at RVA 0x2000 and file offset 0x200."""
-    data = bytearray(2048)
-    data[:2] = b"MZ"
-    struct.pack_into("<I", data, 0x3C, 0x80)
-    data[0x80:0x84] = b"PE\0\0"
-    struct.pack_into("<HH", data, 0x84, 0x8664, 1)
-    struct.pack_into("<H", data, 0x94, 240)
-    optional = 0x98
-    struct.pack_into("<H", data, optional, 0x20B)
-    struct.pack_into("<Q", data, optional + 24, 0x140000000)
-    struct.pack_into("<I", data, optional + 60, 0x200)
-    struct.pack_into("<I", data, optional + 108, 16)
-    width = 32 if delay else 20
-    struct.pack_into("<II", data, optional + 112 + (13 if delay else 1) * 8,
-                     0x2000, (len(imports) + 1) * width)
-    section = optional + 240
-    data[section:section + 8] = b".rdata\0\0"
-    struct.pack_into("<IIII", data, section + 8, 0x600, 0x2000, 0x600, 0x200)
-    for index, name in enumerate(imports):
-        name_offset = 0x400 + index * 80
-        name_rva = 0x2000 + name_offset - 0x200
-        descriptor = 0x200 + index * width
-        if delay:
-            struct.pack_into("<II", data, descriptor, 1, name_rva)
-        else:
-            struct.pack_into("<I", data, descriptor + 12, name_rva)
-        encoded = name.encode("ascii") + b"\0"
-        data[name_offset:name_offset + len(encoded)] = encoded
-    return bytes(data)
 
 
 def status(name, version, port_version=0, **fields):
@@ -69,14 +36,16 @@ class RecordedWindows:
     def __init__(self):
         self.version = "13.00"
         self.result = {"version": "3.8.4", "geotiff": True, "pixel": "11",
-                       "coordinate": [1335833.8895192828, 5621521.486192066, 0.0]}
+                       "coordinate": [1335833.8895192828, 5621521.486192066, 0.0],
+                       "sqlite_query": True, "python_sqlite_version": "3.50.3",
+                       "gdal_sqlite_version": "3.50.3"}
         self.calls = []
 
     def exiftool(self, archive, work):
         self.calls.append("exiftool")
         return self.version
 
-    def gdal(self, python_zip, wheel, installed, runtime, work):
+    def gdal(self, python_zip, wheel, installed, work):
         self.calls.append("gdal")
         return self.result
 
@@ -95,17 +64,18 @@ class ReleaseTests(unittest.TestCase):
         self.write_manifest()
         self.status = status("gdal", "3.8.4") + status("proj", "9.3.1")
         self.export_files = {PREFIX + "vcpkg/status": self.status,
-                             PREFIX + check.TRIPLET + "/bin/gdal.dll": pe_binary(),
+                             PREFIX + check.TRIPLET + "/bin/gdal.dll": "fixture",
+                             PREFIX + check.TRIPLET + "/bin/sqlite3.dll": "export SQLite",
                              PREFIX + check.TRIPLET + "/share/gdal/gdalvrt.xsd": "fixture",
                              PREFIX + check.TRIPLET + "/share/proj/proj.db": "fixture"}
         self.write_export()
-        self.write_zip(PYTHON, {"python.exe": "fixture", "python312._pth": "python312.zip\n.\n"})
+        self.write_zip(PYTHON, {"python.exe": "fixture", "python312._pth": "python312.zip\n.\n",
+                                "sqlite3.dll": "embedded SQLite"})
         self.write_zip(EXIF, {"exiftool-13.00_64/exiftool(-k).exe": "fixture"})
-        self.write_zip(RUNTIME, {"runtime/VCRUNTIME140.dll": "fixture"})
         self.write_zip(WHEEL, {"osgeo/__init__.py": "", "osgeo/_gdal.pyd": "fixture"})
-        for name in ("vcpkg-list.txt", "BUILD-INFO.txt"):
+        for name in ("BUILD-INFO.txt",):
             (self.assets / name).write_text("fixture\n", encoding="utf-8")
-        self.license_names = ["gdal", "proj", PYTHON, EXIF, RUNTIME]
+        self.license_names = ["gdal", "proj", PYTHON, EXIF]
         self.write_licenses()
         self.sums()
         self.probe = RecordedWindows()
@@ -121,6 +91,14 @@ class ReleaseTests(unittest.TestCase):
     def write_export(self):
         self.export_files[PREFIX + "vcpkg/status"] = self.status
         self.write_zip(EXPORT, self.export_files)
+        self.write_port_list()
+
+    def write_port_list(self):
+        ports = check.status_ports(self.status)
+        (self.assets / "vcpkg-list.txt").write_text("".join(
+            f"{name}:{architecture} {version}" + (f"#{revision}" if revision else "") + "\n"
+            for (name, architecture), (version, revision) in sorted(ports.items())
+        ), encoding="utf-8")
 
     def write_licenses(self):
         (self.assets / "LICENSES.md").write_text(
@@ -144,12 +122,13 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn(name, self.failed())
 
     def test_complete_release_and_success_exit(self):
+        self.assertFalse((self.assets / "vc-runtime.zip").exists())
         self.assertEqual(self.failed(), set())
         output = io.StringIO()
         with redirect_stdout(output):
             result = check.main([str(self.assets), "--manifest", str(self.manifest)], self.probe)
         self.assertEqual(result, 0)
-        self.assertEqual(output.getvalue().count("PASS "), 8)
+        self.assertEqual(output.getvalue().count("PASS "), 7)
 
     def test_wrong_hash_fails_and_never_executes_files(self):
         (self.assets / EXIF).write_bytes(b"changed")
@@ -207,9 +186,9 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn("PASS checksums: ok", result.stdout)
         self.assertIn("FAIL export: Cannot extract " + PREFIX + "vcpkg/status: "
                       "That compression method is not supported", result.stdout)
-        self.assertIn("PASS metadata: ok", result.stdout)
-        self.assertIn("FAIL runtime:", result.stdout)
-        self.assertEqual(len(result.stdout.splitlines()), 8)
+        self.assertIn("FAIL metadata:", result.stdout)
+        self.assertIn("FAIL gdal:", result.stdout)
+        self.assertEqual(len(result.stdout.splitlines()), 7)
         self.assertEqual(result.stderr, "")
 
     def test_encrypted_zip_reports_failure_and_continues(self):
@@ -234,9 +213,9 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("PASS checksums: ok", result.stdout)
         self.assertIn("FAIL export: Encrypted zip entry: " + PREFIX + "vcpkg/status", result.stdout)
-        self.assertIn("PASS metadata: ok", result.stdout)
-        self.assertIn("FAIL runtime:", result.stdout)
-        self.assertEqual(len(result.stdout.splitlines()), 8)
+        self.assertIn("FAIL metadata:", result.stdout)
+        self.assertIn("FAIL gdal:", result.stdout)
+        self.assertEqual(len(result.stdout.splitlines()), 7)
         self.assertEqual(result.stderr, "")
 
     def assert_archive_command_failure(self, error_text, injection=None):
@@ -251,9 +230,9 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn("FAIL export:", result.stdout)
         export_verdict = next(line for line in result.stdout.splitlines() if line.startswith("FAIL export:"))
         self.assertIn(error_text, export_verdict)
-        self.assertIn("PASS metadata: ok", result.stdout)
-        self.assertIn("FAIL runtime:", result.stdout)
-        self.assertEqual(len(result.stdout.splitlines()), 8)
+        self.assertIn("FAIL metadata:", result.stdout)
+        self.assertIn("FAIL gdal:", result.stdout)
+        self.assertEqual(len(result.stdout.splitlines()), 7)
         self.assertEqual(result.stderr, "")
 
     def test_corrupt_deflate_reports_failure_and_continues(self):
@@ -409,8 +388,63 @@ class ReleaseTests(unittest.TestCase):
                 self.assert_failure("metadata")
                 path.write_bytes(contents)
 
+    def test_port_list_must_match_all_export_ports_and_revisions(self):
+        self.status += status("curl", "8.15.0", 1) + status("gdal", "3.8.4", Feature="core")
+        self.write_export()
+        self.license_names.append("curl")
+        self.write_licenses()
+        path = self.assets / "vcpkg-list.txt"
+        original = path.read_text()
+        path.write_bytes(original.replace("\n", "\r\n").encode())
+        self.sums()
+        self.assertEqual(self.failed(), set())
+        for text in (original.replace("#1", "#2"),
+                     original.replace("proj:x64-windows-avx2 9.3.1\n", ""),
+                     original + "extra:x64-windows-avx2 1.0\n",
+                     original + original, "not a port list\n"):
+            with self.subTest(text=text):
+                path.write_text(text)
+                self.sums()
+                self.assertEqual(self.failed(), {"metadata"})
+
+    def test_release_export_rejects_debug_folders_and_symbols(self):
+        for name in ("debug/", "debug/bin/gdal.dll", "bin/GDAL.PDB", "share/gdal/tool.pdb"):
+            with self.subTest(name=name):
+                key = PREFIX + check.TRIPLET + "/" + name
+                self.export_files[key] = "fixture"
+                self.write_export()
+                self.assert_failure("export")
+                self.export_files.pop(key)
+        self.export_files[PREFIX + check.TRIPLET + "/share/gdal/debug.txt"] = "fixture"
+        self.write_export()
+        self.sums()
+        self.assertEqual(self.failed(), set())
+
+    def test_header_debug_folder_is_release_payload(self):
+        self.export_files[PREFIX + check.TRIPLET + "/include/boost/preprocessor/debug/x.hpp"] = "fixture"
+        self.write_export()
+        self.sums()
+        self.assertEqual(self.failed(), set())
+
+    def test_debug_verdict_lists_every_offending_path(self):
+        paths = [check.TRIPLET + "/debug/bin/a.dll", check.TRIPLET + "/bin/a.pdb",
+                 check.TRIPLET + "/lib/debug/b.lib", "x64-windows/debug/bin/host.dll"]
+        for path in paths:
+            self.export_files[PREFIX + path] = "fixture"
+        self.export_files["deps/export.pdb"] = "fixture"
+        self.write_export()
+        self.sums()
+        failures = {name: message for name, passed, message in self.results() if not passed}
+        self.assertEqual(set(failures), {"export"})
+        for path in paths + ["deps/export.pdb"]:
+            self.assertIn(path, failures["export"])
+
+    def test_second_export_is_rejected(self):
+        (self.assets / "second.zip").write_bytes((self.assets / EXPORT).read_bytes())
+        self.assert_failure("export")
+
     def test_license_for_every_export_port_and_rehosted_file(self):
-        for name in ("gdal", "proj", PYTHON, EXIF, RUNTIME):
+        for name in ("gdal", "proj", PYTHON, EXIF):
             with self.subTest(name=name):
                 self.license_names.remove(name)
                 self.write_licenses()
@@ -426,7 +460,9 @@ class ReleaseTests(unittest.TestCase):
 
     def test_each_gdal_recorded_result(self):
         for key, value in (("version", "3.9.0"), ("geotiff", False), ("pixel", "00"),
-                           ("coordinate", [12, 45, 0]), ("coordinate", [float("nan"), 1, 0])):
+                           ("coordinate", [12, 45, 0]), ("coordinate", [float("nan"), 1, 0]),
+                           ("sqlite_query", False), ("gdal_sqlite_version", "3.49.0"),
+                           ("python_sqlite_version", "")):
             with self.subTest(key=key, value=value):
                 original = self.probe.result[key]
                 self.probe.result[key] = value
@@ -462,40 +498,13 @@ class ReleaseTests(unittest.TestCase):
         self.assert_wheel_entry_rejected("osgeo/proj.db")
 
     def test_missing_each_required_archive(self):
-        for name, failure in ((PYTHON, "gdal"), (EXIF, "exiftool"), (WHEEL, "gdal"), (RUNTIME, "runtime")):
+        for name, failure in ((PYTHON, "gdal"), (EXIF, "exiftool"), (WHEEL, "gdal")):
             with self.subTest(name=name):
                 path = self.assets / name
                 contents = path.read_bytes()
                 path.unlink()
                 self.assert_failure(failure)
                 path.write_bytes(contents)
-
-    def test_runtime_import_case_and_system_dll(self):
-        self.export_files[PREFIX + check.TRIPLET + "/bin/gdal.dll"] = pe_binary(
-            ("vcruntime140.DLL", "KERNEL32.dll", "api-ms-win-crt-heap-l1-1-0.dll"))
-        self.write_export()
-        self.sums()
-        self.assertEqual(self.failed(), set())
-
-    def test_missing_runtime_normal_and_delay_imports(self):
-        for delay in (False, True):
-            with self.subTest(delay=delay):
-                self.export_files[PREFIX + check.TRIPLET + "/bin/gdal.dll"] = pe_binary(
-                    ("MSVCP140.dll",), delay=delay)
-                self.write_export()
-                self.assert_failure("runtime")
-
-    def test_runtime_imports_in_export_tools(self):
-        self.export_files[PREFIX + check.TRIPLET + "/tools/gdal/gdalinfo.exe"] = pe_binary(("MSVCP140.dll",))
-        self.write_export()
-        self.assert_failure("runtime")
-
-    def test_malformed_pe_fails_instead_of_hiding_imports(self):
-        for contents in (b"MZ", b"not a binary", pe_binary()[:1000]):
-            with self.subTest(size=len(contents)):
-                self.export_files[PREFIX + check.TRIPLET + "/bin/gdal.dll"] = contents
-                self.write_export()
-                self.assert_failure("runtime")
 
     def test_default_probe_cannot_claim_windows_execution_on_linux(self):
         with patch.object(check.os, "name", "posix"):
@@ -504,6 +513,7 @@ class ReleaseTests(unittest.TestCase):
 
     def test_default_probe_prepares_embedded_python_without_network(self):
         probe = check.WindowsProbe()
+        archive_hash = check.digest(self.assets / PYTHON)
 
         def recorded_run(command, *, cwd, env):
             python_home = Path(command[0]).parent
@@ -514,7 +524,9 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(env["PROJ_NETWORK"], "OFF")
             self.assertEqual(env["USE_PATH_FOR_GDAL_PYTHON"], "YES")
             self.assertEqual(command[1:3], ["-I", "-c"])
-            self.assertTrue(Path(command[-1], "VCRUNTIME140.dll").is_file())
+            self.assertEqual((python_home / "sqlite3.dll").read_text(), "export SQLite")
+            self.assertEqual(Path(command[-1]), Path(env["GDAL_DATA"]).parents[1] / "bin")
+            self.assertNotIn("runtime", env["PATH"].split(check.os.pathsep))
             return json.dumps(self.probe.result)
 
         with tempfile.TemporaryDirectory() as temporary:
@@ -522,10 +534,39 @@ class ReleaseTests(unittest.TestCase):
             check.extract(self.assets / EXPORT, work / "export")
             installed = work / "export/deps/installed"
             with patch.object(probe, "run", side_effect=recorded_run) as run:
-                result = probe.gdal(self.assets / PYTHON, self.assets / WHEEL, installed,
-                                    self.assets / RUNTIME, work)
+                result = probe.gdal(self.assets / PYTHON, self.assets / WHEEL, installed, work)
             self.assertEqual(result, self.probe.result)
             self.assertEqual(run.call_count, 1)
+        self.assertEqual(check.digest(self.assets / PYTHON), archive_hash)
+
+    def test_sqlite_replacement_matches_embedded_filename_case(self):
+        self.write_zip(PYTHON, {"python.exe": "fixture", "python312._pth": ".\n",
+                                "SQLITE3.DLL": "embedded SQLite"})
+        probe = check.WindowsProbe()
+
+        def recorded_run(command, **kwargs):
+            home = Path(command[0]).parent
+            self.assertEqual((home / "SQLITE3.DLL").read_text(), "export SQLite")
+            self.assertEqual(len([p for p in home.iterdir() if p.name.lower() == "sqlite3.dll"]), 1)
+            return json.dumps(self.probe.result)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            check.extract(self.assets / EXPORT, work / "export")
+            with patch.object(probe, "run", side_effect=recorded_run):
+                probe.gdal(self.assets / PYTHON, self.assets / WHEEL,
+                           work / "export/deps/installed", work)
+
+    def test_missing_export_sqlite_is_a_failed_gdal_verdict(self):
+        del self.export_files[PREFIX + check.TRIPLET + "/bin/sqlite3.dll"]
+        self.write_export()
+        self.sums()
+        probe = check.WindowsProbe()
+        with patch.object(probe, "exiftool", return_value="13.00"), patch.object(probe, "run") as run:
+            failures = {name: message for name, passed, message in self.results(probe) if not passed}
+        self.assertEqual(set(failures), {"gdal"})
+        self.assertIn("export SQLite DLL", failures["gdal"])
+        run.assert_not_called()
 
     def test_default_exiftool_probe_renames_pause_executable(self):
         probe = check.WindowsProbe()
@@ -552,7 +593,7 @@ class ReleaseTests(unittest.TestCase):
         with patch.object(self.probe, "exiftool", side_effect=OSError("cannot execute")):
             results = self.results()
         self.assertEqual({name for name, passed, _ in results if not passed}, {"exiftool"})
-        self.assertEqual(results[-1][0], "runtime")
+        self.assertEqual(results[-1][0], "gdal")
 
 
 if __name__ == "__main__":

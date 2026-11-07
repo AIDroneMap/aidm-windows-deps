@@ -92,6 +92,10 @@ jobs:
               for path in sorted([debug, *debug.rglob("*")]):
                   print(f"Removing debug export path: {path.relative_to(exported).as_posix()}")
               shutil.rmtree(debug)
+          for path in sorted((exported / "installed").rglob("*")):
+              if path.is_file() and path.suffix.lower() == ".pdb":
+                  print(f"Removing export symbols: {path.relative_to(exported).as_posix()}")
+                  path.unlink()
           shutil.make_archive(
               "assets/aidm-windows-deps", "zip",
               root_dir="assets", base_dir="aidm-windows-deps",
@@ -164,6 +168,11 @@ jobs:
           python .github/release/assets.py metadata
           if ($LASTEXITCODE -ne 0) { throw 'Writing release metadata failed.' }
 
+      - name: Check complete release assets
+        run: |
+          python scripts/check-release.py assets --manifest vcpkg.json
+          if ($LASTEXITCODE -ne 0) { throw 'The release asset check failed.' }
+
       - name: Upload dependency assets
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -171,3 +180,40 @@ jobs:
           path: assets/*
           if-no-files-found: error
           compression-level: 0
+
+  draft:
+    name: Create checked draft release
+    needs: export
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download checked dependency assets
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: aidm-windows-deps
+          path: assets
+
+      - name: Create draft from checked assets
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          import os
+          from pathlib import Path
+          import subprocess
+
+          tag = os.environ["GITHUB_REF_NAME"]
+          if os.environ["GITHUB_EVENT_NAME"] != "push" or not os.environ["GITHUB_REF"].startswith("refs/tags/v"):
+              raise SystemExit("Only a version tag push can create a draft release.")
+          assets = sorted(str(path) for path in Path("assets").iterdir() if path.is_file())
+          if not assets:
+              raise SystemExit("The checked release artifact has no assets.")
+          subprocess.run(
+              ["gh", "release", "create", tag, *assets, "--draft", "--verify-tag",
+               "--title", f"Windows dependencies {tag}", "--generate-notes"],
+              check=True,
+          )

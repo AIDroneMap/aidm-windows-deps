@@ -29,7 +29,6 @@ import zlib
 TRIPLET = "x64-windows-avx2"
 PYTHON_NAME = re.compile(r"python-\d+\.\d+\.\d+-embed-amd64\.zip", re.I)
 EXIF_NAME = re.compile(r"exiftool-(\d+\.\d+)_64\.zip", re.I)
-RUNTIME_DLL = re.compile(r"(?:(?:vcruntime|msvcp|msvcr|vcomp)\d+\w*|concrt\d+)\.dll", re.I)
 
 
 def require(condition, message):
@@ -103,84 +102,27 @@ def status_ports(text):
     return ports
 
 
-def pe_imports(data):
-    """Read ordinary and delay imports, mapping section RVAs to file offsets."""
-    def unpack(fmt, offset):
-        require(0 <= offset <= len(data) - struct.calcsize(fmt), "Truncated PE file")
-        return struct.unpack_from(fmt, data, offset)
-
-    require(data[:2] == b"MZ", "Binary has no DOS header")
-    pe = unpack("<I", 0x3C)[0]
-    require(data[pe:pe + 4] == b"PE\0\0", "Binary has no PE header")
-    sections = unpack("<H", pe + 6)[0]
-    optional_size = unpack("<H", pe + 20)[0]
-    optional = pe + 24
-    magic = unpack("<H", optional)[0]
-    require(magic in (0x10B, 0x20B), "Unsupported PE optional header")
-    directory = optional + (112 if magic == 0x20B else 96)
-    count = unpack("<I", directory - 4)[0]
-    require(directory + min(count, 16) * 8 <= optional + optional_size,
-            "Truncated PE data directories")
-    image_base = unpack("<Q" if magic == 0x20B else "<I",
-                        optional + (24 if magic == 0x20B else 28))[0]
-    headers_size = unpack("<I", optional + 60)[0]
-
-    def offset(rva):
-        if rva < headers_size:
-            require(rva < len(data), "PE header RVA is outside the file")
-            return rva
-        for index in range(sections):
-            section = optional + optional_size + index * 40
-            size, address, raw_size, raw = unpack("<IIII", section + 8)
-            if address <= rva < address + max(size, raw_size):
-                require(rva - address < raw_size, "PE RVA has no file data")
-                result = raw + rva - address
-                require(result < len(data), "PE RVA is outside the file")
-                return result
-        raise ValueError("PE RVA is outside its sections")
-
-    def name_at(rva):
-        start = offset(rva)
-        end = data.find(b"\0", start, start + 4096)
-        require(end != -1, "Unterminated PE import name")
-        name = data[start:end].decode("ascii").lower()
-        require(name and "/" not in name and "\\" not in name,
-                "Invalid PE import name")
-        return name
-
-    imports = set()
-    for index, width in ((1, 20), (13, 32)):
-        if index >= count:
-            continue
-        rva, size = unpack("<II", directory + index * 8)
-        if not rva:
-            continue
-        terminated = False
-        for step in range(size // width):
-            fields = unpack("<" + "I" * (width // 4), offset(rva + step * width))
-            if not any(fields):
-                terminated = True
-                break
-            name_rva = fields[3] if index == 1 else fields[1]
-            if index == 13 and not fields[0] & 1:
-                name_rva -= image_base
-            imports.add(name_at(name_rva))
-        require(terminated, "Unterminated PE import directory")
-    return imports
-
-
 GDAL_PROBE = r'''
 import json
 import os
 from pathlib import Path
 import sys
 
-handles = [os.add_dll_directory(path) for path in sys.argv[1:3]]
-from osgeo import gdal, osr
+handles = [os.add_dll_directory(sys.argv[1])]
+import sqlite3
+from osgeo import gdal, ogr, osr
 gdal.UseExceptions()
 osr.UseExceptions()
 driver = gdal.GetDriverByName("GTiff")
 result = {"version": gdal.__version__, "geotiff": driver is not None}
+with sqlite3.connect(":memory:") as connection:
+    result["sqlite_query"] = connection.execute("SELECT 17").fetchone() == (17,)
+database = ogr.GetDriverByName("SQLite").CreateDataSource(":memory:")
+query = database.ExecuteSQL("SELECT sqlite_version()")
+result["gdal_sqlite_version"] = query.GetNextFeature().GetField(0)
+database.ReleaseResultSet(query)
+database = None
+result["python_sqlite_version"] = sqlite3.sqlite_version
 if driver is not None:
     path = str(Path.cwd() / "probe.tif")
     image = driver.Create(path, 1, 1, 1, gdal.GDT_Byte)
@@ -217,7 +159,7 @@ class WindowsProbe:
             executable = executable.rename(executable.with_name("exiftool.exe"))
         return self.run([str(executable), "-ver"], cwd=folder)
 
-    def gdal(self, python_zip, wheel, installed, runtime, work):
+    def gdal(self, python_zip, wheel, installed, work):
         python_home = work / "python"
         extract(python_zip, python_home)
         site = python_home / "Lib" / "site-packages"
@@ -233,19 +175,21 @@ class WindowsProbe:
         pth = one(python_home.glob("python*._pth"), "embeddable Python path file")
         pth.write_text(pth.read_text(encoding="utf-8") + "\nLib/site-packages\nimport site\n",
                        encoding="utf-8")
-        runtime_home = work / "runtime"
-        extract(runtime, runtime_home)
-        runtime_bin = one((p.parent for p in runtime_home.rglob("*")
-                           if p.name.lower() == "vcruntime140.dll"), "VC++ runtime directory")
         binary = installed / TRIPLET / "bin"
+        sqlite = one((p for p in binary.iterdir() if p.name.lower() == "sqlite3.dll"),
+                     "export SQLite DLL")
+        embedded_sqlite = one((p for p in python_home.iterdir() if p.name.lower() == "sqlite3.dll"),
+                              "embedded Python SQLite DLL")
+        # Windows loads the DLL next to Python before searching the export.
+        shutil.copyfile(sqlite, embedded_sqlite)
         gdal_data = installed / TRIPLET / "share" / "gdal"
         proj_data = installed / TRIPLET / "share" / "proj"
         require(gdal_data.is_dir() and proj_data.is_dir(), "Export lacks GDAL or PROJ data")
         env = dict(os.environ, GDAL_DATA=str(gdal_data), PROJ_LIB=str(proj_data),
                    PROJ_DATA=str(proj_data), PROJ_NETWORK="OFF", USE_PATH_FOR_GDAL_PYTHON="YES")
-        env["PATH"] = os.pathsep.join((str(binary), str(runtime_bin), env.get("PATH", "")))
+        env["PATH"] = os.pathsep.join((str(binary), env.get("PATH", "")))
         output = self.run([str(python_home / "python.exe"), "-I", "-c", GDAL_PROBE,
-                           str(binary), str(runtime_bin)], cwd=work, env=env)
+                           str(binary)], cwd=work, env=env)
         return json.loads(output)
 
 
@@ -263,11 +207,6 @@ class ReleaseCheck:
 
     def exif_zip(self):
         return one((p for p in self.files() if EXIF_NAME.fullmatch(p.name)), "ExifTool zip")
-
-    def runtime_zip(self):
-        excluded = {self.export_zip, self.python_zip(), self.exif_zip()}
-        return one((p for p in self.files() if p.suffix.lower() == ".zip" and p not in excluded),
-                   "VC++ runtime zip")
 
     def checksums(self):
         listed = {}
@@ -309,6 +248,17 @@ class ReleaseCheck:
         status = one(folder.rglob("vcpkg/status"), "vcpkg status file")
         self.installed = status.parent.parent
         self.ports = status_ports(status.read_text(encoding="utf-8"))
+        offending = []
+        for path in sorted(folder.rglob("*")):
+            debug = False
+            if path.is_relative_to(self.installed):
+                parts = [part.lower() for part in path.relative_to(self.installed).parts]
+                # Header directories can be named debug, including Boost's headers.
+                debug = len(parts) > 1 and (parts[1] == "debug" or (
+                    parts[1] in ("bin", "lib") and "debug" in parts[2:]))
+            if debug or (path.is_file() and path.suffix.lower() == ".pdb"):
+                offending.append(path.relative_to(folder).as_posix())
+        require(not offending, "Export contains debug payload:\n" + "\n".join(offending))
 
     def ports_match(self):
         require(hasattr(self, "ports"), "Export check must pass before comparing ports")
@@ -333,6 +283,16 @@ class ReleaseCheck:
     def metadata(self):
         for name in ("vcpkg-list.txt", "LICENSES.md", "BUILD-INFO.txt"):
             require((self.assets / name).is_file(), f"Missing metadata: {name}")
+        require(hasattr(self, "ports"), "Export check must pass before comparing the port list")
+        listed = {}
+        for line in (self.assets / "vcpkg-list.txt").read_text(encoding="utf-8").splitlines():
+            match = re.fullmatch(r"([a-z0-9-]+):([a-z0-9-]+) ([^ #]+)(?:#([0-9]+))?", line)
+            require(match is not None, f"Malformed port list entry: {line}")
+            name, architecture, version, revision = match.groups()
+            key = (name, architecture)
+            require(key not in listed, f"Duplicate port list entry: {name}:{architecture}")
+            listed[key] = (version, int(revision or 0))
+        require(listed == self.ports, "vcpkg-list.txt differs from the export status")
 
     def licenses(self):
         require(hasattr(self, "ports"), "Export check must pass before comparing licences")
@@ -345,8 +305,7 @@ class ReleaseCheck:
             require(separator and body.strip() and name not in entries,
                     f"Empty or duplicate licence entry: {name}")
             entries[name] = body
-        expected = {name for name, _ in self.ports} | {self.python_zip().name, self.exif_zip().name,
-                                                      self.runtime_zip().name}
+        expected = {name for name, _ in self.ports} | {self.python_zip().name, self.exif_zip().name}
         require(expected <= entries.keys(), f"Missing licence entries: {sorted(expected - entries.keys())}")
 
     def exiftool(self, work):
@@ -366,28 +325,19 @@ class ReleaseCheck:
                 require(not (parts[-1].endswith(".dll") or parts[-1] == "proj.db"
                              or any(part in ("data", "share") for part in parts[:-1])),
                         f"GDAL wheel must contain bindings only, without DLLs or data: {name}")
-        result = self.probe.gdal(self.python_zip(), wheel, self.installed, self.runtime_zip(), work)
+        result = self.probe.gdal(self.python_zip(), wheel, self.installed, work)
         require(result["version"] == "3.8.4", f"GDAL version mismatch: {result['version']}")
         require(result["geotiff"] is True, "GDAL has no GeoTIFF driver")
         require(result.get("pixel") == "11", "GDAL did not read the written GeoTIFF pixel")
+        require(result.get("sqlite_query") is True, "Python SQLite did not open and query a database")
+        require(result.get("python_sqlite_version")
+                and result["python_sqlite_version"] == result.get("gdal_sqlite_version"),
+                "Python and GDAL SQLite versions differ")
         coordinate = result["coordinate"]
         require(len(coordinate) == 3 and all(math.isfinite(value) for value in coordinate)
                 and math.isclose(coordinate[0], 1335833.8895192828, abs_tol=0.01)
                 and math.isclose(coordinate[1], 5621521.486192066, abs_tol=0.01),
                 f"PROJ coordinate transform differs: {coordinate}")
-
-    def runtime(self, work):
-        require(hasattr(self, "installed"), "Export check must pass before inspecting runtime imports")
-        folder = work / "runtime-inspect"
-        extract(self.runtime_zip(), folder)
-        available = {p.name.lower() for p in folder.rglob("*") if p.is_file()}
-        required = set()
-        binary = self.installed / TRIPLET / "bin"
-        require(binary.is_dir(), "Export lacks its release bin folder")
-        for path in self.installed.rglob("*"):
-            if path.suffix.lower() in (".dll", ".exe"):
-                required.update(name for name in pe_imports(path.read_bytes()) if RUNTIME_DLL.fullmatch(name))
-        require(required <= available, f"Runtime zip lacks imported DLLs: {sorted(required - available)}")
 
     def run(self):
         for name in ("hashes_validated", "export_zip", "installed", "ports"):
@@ -398,7 +348,7 @@ class ReleaseCheck:
             checks = (("checksums", self.checksums), ("export", lambda: self.export(work)),
                       ("ports", self.ports_match), ("metadata", self.metadata),
                       ("licenses", self.licenses), ("exiftool", lambda: self.exiftool(work)),
-                      ("gdal", lambda: self.gdal(work)), ("runtime", lambda: self.runtime(work)))
+                      ("gdal", lambda: self.gdal(work)))
             for name, check in checks:
                 try:
                     check()
