@@ -14,10 +14,25 @@ from assets import CONFIG, TRIPLET, download, sha256
 
 
 MODULES = ("_gdal", "_gdalconst", "_osr", "_ogr", "_gnm", "_gdal_array")
-PROBE = """
+SQLITE_PROBE = """
+import sqlite3
+from osgeo import ogr
+
+with sqlite3.connect(':memory:') as connection:
+    assert connection.execute('SELECT 17').fetchone() == (17,)
+database = ogr.GetDriverByName('SQLite').CreateDataSource(':memory:')
+result = database.ExecuteSQL('SELECT sqlite_version()')
+gdal_sqlite_version = result.GetNextFeature().GetField(0)
+database.ReleaseResultSet(result)
+database = None
+print(f'Python SQLite: {sqlite3.sqlite_version}')
+print(f'GDAL SQLite: {gdal_sqlite_version}')
+assert sqlite3.sqlite_version == gdal_sqlite_version, 'Python and GDAL SQLite versions differ.'
+"""
+PROBE = SQLITE_PROBE + """
 import sys
 import numpy
-from osgeo import gdal, gdal_array
+from osgeo import gdal, gdal_array, osr
 
 assert sys.version_info[:3] == (3, 12, 10), sys.version
 assert numpy.__version__ == '2.3.2', numpy.__version__
@@ -77,6 +92,13 @@ def embedded_python(archive, folder, pip_wheel):
     return folder / "python.exe"
 
 
+def probe_python(archive, folder, pip_wheel, exported):
+    python = embedded_python(archive, folder, pip_wheel)
+    # The embedded SQLite lacks the column metadata symbols GDAL imports.
+    shutil.copyfile(exported / "bin/sqlite3.dll", folder / "sqlite3.dll")
+    return python
+
+
 def run(*command, **kwargs):
     subprocess.run([str(part) for part in command], check=True, **kwargs)
 
@@ -126,7 +148,7 @@ def build(assets, work):
     run(python, "-m", "wheel", "pack", package, "--dest-dir", wheels)
     wheel, = wheels.glob("*.whl")
     check_wheel(wheel)
-    probe = embedded_python(embedded, work / "probe-python", pip_wheel)
+    probe = probe_python(embedded, work / "probe-python", pip_wheel, exported)
     numpy_pin, = [line for line in requirements.read_text().splitlines()
                   if line.startswith("numpy==")]
     probe_requirements = work / "probe-requirements.txt"

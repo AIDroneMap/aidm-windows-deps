@@ -2,11 +2,15 @@
 
 import hashlib
 import importlib.util
+import io
+from contextlib import redirect_stdout
 from pathlib import Path
+import sqlite3
 import sys
 import tempfile
+from types import ModuleType
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 import zipfile
 
 
@@ -103,6 +107,49 @@ class DevelopmentTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Invalid CPython development path"):
             self.extract()
         self.assertFalse((self.root / "python.exe").exists())
+
+
+class ProbeLayoutTests(unittest.TestCase):
+    def test_probe_uses_export_sqlite_and_keeps_archive_unchanged(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            archive, pip = root / "python.zip", root / "pip.whl"
+            with zipfile.ZipFile(archive, "w") as package:
+                package.writestr("python.exe", "fixture")
+                package.writestr("sqlite3.dll", "embedded SQLite without column metadata")
+                package.writestr("python312._pth", "python312.zip\n.\n")
+            with zipfile.ZipFile(pip, "w") as package:
+                package.writestr("pip/__init__.py", "fixture")
+            original = archive.read_bytes()
+            exported = root / "export"
+            (exported / "bin").mkdir(parents=True)
+            (exported / "bin/sqlite3.dll").write_bytes(b"export SQLite with column metadata")
+            python = gdal_wheel.probe_python(archive, root / "probe", pip, exported)
+            self.assertEqual((python.parent / "sqlite3.dll").read_bytes(),
+                             (exported / "bin/sqlite3.dll").read_bytes())
+            self.assertEqual(archive.read_bytes(), original)
+
+
+class SqliteProbeTests(unittest.TestCase):
+    def run_probe(self, version):
+        osgeo = ModuleType("osgeo")
+        osgeo.ogr = MagicMock()
+        database = osgeo.ogr.GetDriverByName.return_value.CreateDataSource.return_value
+        database.ExecuteSQL.return_value.GetNextFeature.return_value.GetField.return_value = version
+        with patch.dict(sys.modules, {"osgeo": osgeo}), redirect_stdout(io.StringIO()) as output:
+            exec(gdal_wheel.SQLITE_PROBE, {})
+        database.ExecuteSQL.assert_called_once_with("SELECT sqlite_version()")
+        database.ReleaseResultSet.assert_called_once_with(database.ExecuteSQL.return_value)
+        return output.getvalue()
+
+    def test_matching_versions_and_stdlib_query_pass(self):
+        output = self.run_probe(sqlite3.sqlite_version)
+        self.assertIn(f"Python SQLite: {sqlite3.sqlite_version}", output)
+        self.assertIn(f"GDAL SQLite: {sqlite3.sqlite_version}", output)
+
+    def test_different_sqlite_versions_fail(self):
+        with self.assertRaisesRegex(AssertionError, "Python and GDAL SQLite versions differ"):
+            self.run_probe("0.0.0")
 
 
 if __name__ == "__main__":
