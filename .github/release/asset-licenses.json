@@ -1,0 +1,152 @@
+{
+  "assets": [
+    {
+      "pattern": "python-3.12.10-embed-amd64.zip",
+      "license": "PSF-2.0 and the bundled third-party notices",
+      "source": "https://www.python.org/downloads/release/python-31210/",
+      "members": [
+        "LICENSE.txt"
+      ]
+    },
+    {
+      "pattern": "exiftool-13.61_64.zip",
+      "license": "The same terms as Perl, with the bundled notices reproduced below",
+      "source": "https://exiftool.org/",
+      "note": "The publisher states the same terms as Perl. This Windows package includes a GPL-3.0 LICENSE file, Perl's Artistic and GPL-1 texts, the Strawberry Perl library notices, and a CC0 launcher notice. All shipped licence files are reproduced below.",
+      "members": [
+        "exiftool-13.61_64/exiftool_files/LICENSE",
+        "exiftool-13.61_64/exiftool_files/readme_windows.txt"
+      ],
+      "license_archives": [
+        "exiftool-13.61_64/exiftool_files/Licenses_Strawberry_Perl.zip"
+      ]
+    }
+  ],
+  "export_runtimes": [
+    {
+      "filename": "libgcc_s_seh-1.dll",
+      "package": "https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-gcc-libs-15.1.0-5-any.pkg.tar.zst",
+      "sha512": "cfbfc2fa0029ae9dda628cdaea476579a6cdfafeec716986b4e0761f02b755c338e57e1b96c457881109343d1bd8b55be349c2df05bb57ba4449e56f1acb569f",
+      "license": "GPL-3.0-or-later WITH GCC-exception-3.1",
+      "texts": [
+        {
+          "file": "licenses/gcc-COPYING3",
+          "source": "mingw64/share/licenses/gcc-libs/COPYING3"
+        },
+        {
+          "file": "licenses/gcc-COPYING.RUNTIME",
+          "source": "mingw64/share/licenses/gcc-libs/COPYING.RUNTIME"
+        },
+        {
+          "file": "licenses/gcc-README",
+          "source": "mingw64/share/licenses/gcc-libs/README"
+        }
+      ]
+    },
+    {
+      "filename": "libgfortran-5.dll",
+      "package": "https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-gcc-libgfortran-15.1.0-5-any.pkg.tar.zst",
+      "sha512": "65dfeb735c99d2e112363f5135be14eecb1e56bf88ecd359f40e557f6714ecd1d721e3a8b875ac04c9b53c7e829375501ad8e9c927b484006798e867a9a97d34",
+      "license": "GPL-3.0-or-later WITH GCC-exception-3.1",
+      "texts": [
+        {
+          "file": "licenses/gcc-COPYING3",
+          "source": "mingw-w64-x86_64-gcc-libs-15.1.0-5-any.pkg.tar.zst/mingw64/share/licenses/gcc-libs/COPYING3"
+        },
+        {
+          "file": "licenses/libgfortran-COPYING.RUNTIME",
+          "source": "mingw64/share/licenses/gcc-libgfortran/COPYING.RUNTIME"
+        }
+      ]
+    },
+    {
+      "filename": "libquadmath-0.dll",
+      "package": "https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-gcc-libs-15.1.0-5-any.pkg.tar.zst",
+      "sha512": "cfbfc2fa0029ae9dda628cdaea476579a6cdfafeec716986b4e0761f02b755c338e57e1b96c457881109343d1bd8b55be349c2df05bb57ba4449e56f1acb569f",
+      "license": "LGPL-2.1-or-later",
+      "texts": [
+        {
+          "file": "licenses/gcc-COPYING.LIB",
+          "source": "mingw64/share/licenses/gcc-libs/COPYING.LIB"
+        },
+        {
+          "file": "licenses/gcc-README",
+          "source": "mingw64/share/licenses/gcc-libs/README"
+        }
+      ]
+    },
+    {
+      "filename": "libwinpthread-1.dll",
+      "package": "https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-libwinpthread-12.0.0.r747.g1a99f8514-1-any.pkg.tar.zst",
+      "sha512": "011f2719ca60437adf8ea653d78592a407eea67f515135164f7437248dca07b11aa5a6bc4769f507ef1b1a1dd0c5c5144fa99613e3eeb6d44dac4a5b48de73bd",
+      "license": "MIT-style mingw-w64 notice and BSD-3-Clause-style Lockless notice",
+      "texts": [
+        {
+          "file": "licenses/winpthreads-COPYING",
+          "source": "mingw64/share/licenses/libwinpthread/COPYING"
+        }
+      ]
+    }
+  ],
+  "wrapper_baseline": "6ecbbbdf31cba47aafa7cf6189b1e73e10ac61f8",
+  "wrapper_ports": {
+    "blas": {
+      "version": "2023-04-14#3",
+      "note": "This metapackage ships no per-port copyright file. Its generated build wrappers use the vcpkg MIT licence below. The BLAS implementation and its licence are listed under openblas.",
+      "source": "https://raw.githubusercontent.com/microsoft/vcpkg/6ecbbbdf31cba47aafa7cf6189b1e73e10ac61f8/ports/blas/portfile.cmake",
+      "implementations": [
+        "openblas"
+      ],
+      "texts": [
+        {
+          "file": "licenses/vcpkg-LICENSE.txt",
+          "source": "https://raw.githubusercontent.com/microsoft/vcpkg/6ecbbbdf31cba47aafa7cf6189b1e73e10ac61f8/LICENSE.txt"
+        }
+      ]
+    },
+    "boost-uninstall": {
+      "version": "1.88.0",
+      "note": "This internal port ships no per-port copyright file. It installs a build-system wrapper and declares MIT in its port manifest. The vcpkg MIT licence is reproduced below.",
+      "source": "https://raw.githubusercontent.com/microsoft/vcpkg/6ecbbbdf31cba47aafa7cf6189b1e73e10ac61f8/ports/boost-uninstall/portfile.cmake",
+      "implementations": [],
+      "texts": [
+        {
+          "file": "licenses/vcpkg-LICENSE.txt",
+          "source": "https://raw.githubusercontent.com/microsoft/vcpkg/6ecbbbdf31cba47aafa7cf6189b1e73e10ac61f8/LICENSE.txt"
+        }
+      ]
+    },
+    "lapack": {
+      "version": "2023-06-10#2",
+      "note": "This metapackage ships no per-port copyright file. It copies build wrappers from lapack-reference. The vcpkg wrapper licence is MIT, and the FindLAPACK.cmake header names the CMake BSD-3-Clause licence. Both texts are reproduced below. The numerical implementation and its licence are listed under lapack-reference.",
+      "source": "https://raw.githubusercontent.com/microsoft/vcpkg/6ecbbbdf31cba47aafa7cf6189b1e73e10ac61f8/ports/lapack/portfile.cmake",
+      "implementations": [
+        "lapack-reference"
+      ],
+      "texts": [
+        {
+          "file": "licenses/vcpkg-LICENSE.txt",
+          "source": "https://raw.githubusercontent.com/microsoft/vcpkg/6ecbbbdf31cba47aafa7cf6189b1e73e10ac61f8/LICENSE.txt"
+        },
+        {
+          "file": "licenses/cmake-Copyright.txt",
+          "source": "https://raw.githubusercontent.com/Kitware/CMake/v3.31.6/Copyright.txt"
+        }
+      ]
+    },
+    "yasm-tool": {
+      "version": "2021-12-14",
+      "note": "This legacy metapackage ships no code or per-port copyright file. Its empty port definition selects yasm with the tools feature. The implementation and its licence are listed under yasm. The port metadata is covered by the vcpkg MIT licence below.",
+      "source": "https://raw.githubusercontent.com/microsoft/vcpkg/6ecbbbdf31cba47aafa7cf6189b1e73e10ac61f8/ports/yasm-tool/portfile.cmake",
+      "implementations": [
+        "yasm"
+      ],
+      "texts": [
+        {
+          "file": "licenses/vcpkg-LICENSE.txt",
+          "source": "https://raw.githubusercontent.com/microsoft/vcpkg/6ecbbbdf31cba47aafa7cf6189b1e73e10ac61f8/LICENSE.txt"
+        }
+      ]
+    }
+  }
+}
