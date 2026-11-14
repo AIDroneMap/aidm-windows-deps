@@ -1,6 +1,7 @@
 ## Unreleased
 
 - Deferred the shared writing and attribution rules to the factory-wide directives loaded by every session on the coding machine. AGENTS.md keeps the privacy rules and everything Windows specific. Evidence: text review; all 80 unit tests pass on the head.
+- The release check's GDAL probe now runs its Python process with a minimal `PATH`: the export's `bin` folder and the Windows system folders. The check of v1.0.0 on a Windows 11 machine ended the probe with an access violation, exit code 3221225477, because Windows loaded `MSVCP140.dll` 14.28 from another program's folder on the user's `PATH` instead of the 14.51 the export is built for. The README names the symptom. Evidence: `test_probe_path_holds_only_the_export_and_the_system_folders` and `test_probe_path_names_the_system_folders_without_a_system_root` in `tests/test_check_release.py` fail on the previous script and pass with this change. Resolves [issue #19](https://github.com/AIDroneMap/aidm-windows-deps/issues/19).
 
 ## 1.0.0 (2026-11-14)
 

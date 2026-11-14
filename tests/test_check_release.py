@@ -526,7 +526,7 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(command[1:3], ["-I", "-c"])
             self.assertEqual((python_home / "sqlite3.dll").read_text(), "export SQLite")
             self.assertEqual(Path(command[-1]), Path(env["GDAL_DATA"]).parents[1] / "bin")
-            self.assertNotIn("runtime", env["PATH"].split(check.os.pathsep))
+            self.assertNotIn("runtime", env["PATH"].split(";"))
             return json.dumps(self.probe.result)
 
         with tempfile.TemporaryDirectory() as temporary:
@@ -538,6 +538,37 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(result, self.probe.result)
             self.assertEqual(run.call_count, 1)
         self.assertEqual(check.digest(self.assets / PYTHON), archive_hash)
+
+    def test_probe_path_holds_only_the_export_and_the_system_folders(self):
+        foreign = r"C:\Users\pilot\Android\emulator\lib64"
+        probe = check.WindowsProbe()
+        seen = []
+
+        def recorded_run(command, *, cwd, env):
+            seen.append(env)
+            return json.dumps(self.probe.result)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            check.extract(self.assets / EXPORT, work / "export")
+            installed = work / "export/deps/installed"
+            binary = installed / check.TRIPLET / "bin"
+            hostile = {"PATH": check.os.pathsep.join((foreign, r"C:\Program Files\Tool")),
+                       "SystemRoot": r"D:\Win", "PYTHONPATH": foreign}
+            with patch.dict(check.os.environ, hostile), \
+                    patch.object(probe, "run", side_effect=recorded_run):
+                probe.gdal(self.assets / PYTHON, self.assets / WHEEL, installed, work)
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0]["PATH"].split(";"),
+                         [str(binary), r"D:\Win\System32", r"D:\Win"])
+        self.assertNotIn(foreign, seen[0]["PATH"])
+        self.assertNotIn("Program Files", seen[0]["PATH"])
+
+    def test_probe_path_names_the_system_folders_without_a_system_root(self):
+        self.assertEqual(check.probe_path("bin", {}).split(";"),
+                         ["bin", r"C:\Windows\System32", r"C:\Windows"])
+        self.assertEqual(check.probe_path("bin", {"windir": r"E:\W"}).split(";"),
+                         ["bin", r"E:\W\System32", r"E:\W"])
 
     def test_sqlite_replacement_matches_embedded_filename_case(self):
         self.write_zip(PYTHON, {"python.exe": "fixture", "python312._pth": ".\n",
