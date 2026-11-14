@@ -27,6 +27,8 @@ python scripts/check-release.py C:\path\to\assets --manifest vcpkg.json
 
 The command verifies every asset's SHA-256, the export's pinned versions and release payload, the port and licence lists, ExifTool's version, and GDAL's GeoTIFF and PROJ operations in a fresh unpacking of the bundled Python. It checks that Python and GDAL share the export's SQLite and that Python can query a database. It needs no downloads and leaves the assets unchanged. Every verdict must say `PASS`; a failure exits with status 1. The check executes the downloaded Python, ExifTool and GDAL files, so use assets from this project's release.
 
+The check sets the `PATH` of the Python process it starts itself: the export's `bin` folder and the Windows system folders, nothing else. A runtime DLL from another program's folder on your own `PATH` can therefore not be loaded first. Without this, the GDAL probe can end with an access violation, exit code 3221225477 (0xC0000005), when another program's older `MSVCP140.dll` sits on the user's `PATH`.
+
 The dependency release contains no Visual C++ runtime files. The engine package copies them from its own build runner's Visual Studio. The manual check uses the runtime installed on the Windows machine.
 
 See [AGENTS.md](AGENTS.md) for contribution rules and test depths, [REVIEW.md](REVIEW.md) for the review mandate, and [CHANGELOG.md](CHANGELOG.md) for changes and evidence.

@@ -14,6 +14,7 @@ import argparse
 import hashlib
 import json
 import math
+import ntpath
 import os
 from pathlib import Path, PurePosixPath
 import re
@@ -141,6 +142,17 @@ print(json.dumps(result))
 '''
 
 
+def probe_path(binary, environ=None):
+    """PATH of a probe process: the export's bin folder and the Windows system folders.
+
+    Nothing else may be on it. A runtime DLL of another program's folder, for example an
+    older MSVCP140.dll, would otherwise be loaded before the one the export is built for.
+    """
+    environ = os.environ if environ is None else environ
+    root = environ.get("SystemRoot") or environ.get("windir") or "C:\\Windows"
+    return ";".join((str(binary), ntpath.join(root, "System32"), root))
+
+
 class WindowsProbe:
     """Execute local release files only, with no network or installer."""
 
@@ -187,7 +199,7 @@ class WindowsProbe:
         require(gdal_data.is_dir() and proj_data.is_dir(), "Export lacks GDAL or PROJ data")
         env = dict(os.environ, GDAL_DATA=str(gdal_data), PROJ_LIB=str(proj_data),
                    PROJ_DATA=str(proj_data), PROJ_NETWORK="OFF", USE_PATH_FOR_GDAL_PYTHON="YES")
-        env["PATH"] = os.pathsep.join((str(binary), env.get("PATH", "")))
+        env["PATH"] = probe_path(binary)
         output = self.run([str(python_home / "python.exe"), "-I", "-c", GDAL_PROBE,
                            str(binary)], cwd=work, env=env)
         return json.loads(output)
